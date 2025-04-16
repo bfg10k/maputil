@@ -55,7 +55,6 @@ def new_run(db, resume, size):
     run = None
     if resume is True:
         # if resume is True, automatically use the last run.
-        print("resume last run")
         cur = db.execute("select name,size from run order by created_at desc limit 1")
         run = to_run(cur.fetchone())
         if run is None:
@@ -63,7 +62,6 @@ def new_run(db, resume, size):
             resume = newid()
     elif isinstance(resume, str):
         # if resume is a string, use the run with that name. If it doesn't exist, create a new one.
-        print("resume run:", resume)
         cur = db.execute("select name,size from run where name=?", (resume,))
         run = to_run(cur.fetchone())
     else:
