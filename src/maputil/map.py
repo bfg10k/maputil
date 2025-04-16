@@ -149,6 +149,7 @@ def select(fn, inputs, resume=False, progress=False, concurrency=1):
     dblock = threading.Lock()
     with conn() as db:
         runid = new_run(db, resume, len(inputs))
+        print("runid:", runid)
 
         def memfn(item):
             idx, input = item
@@ -159,12 +160,8 @@ def select(fn, inputs, resume=False, progress=False, concurrency=1):
                 jsonval = get_item(db, key)
 
             if jsonval is None:
-                try:
-                    # if not cached, compute result
-                    val = fn(input)
-                except Exception as e:
-                    print("runid:", runid)
-                    raise e
+                # if not cached, compute result
+                val = fn(input)
 
                 with dblock:
                     # save result to cache
