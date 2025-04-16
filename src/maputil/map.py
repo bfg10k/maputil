@@ -140,14 +140,13 @@ def select(fn, inputs, resume=False, progress=False, concurrency=1):
         index = inputs.index
         inputs = inputs.tolist()
 
-    pbar = None
-    if progress:
-        pbar = tqdm(total=len(inputs))
-
     dblock = threading.Lock()
     with conn() as db:
         runid = new_run(db, resume, len(inputs))
-        print("runid:", runid)
+
+        pbar = None
+        if progress:
+            pbar = tqdm(total=len(inputs), desc=runid)
 
         def memfn(item):
             idx, input = item
