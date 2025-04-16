@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
@@ -10,42 +11,97 @@ from .progress import tqdm
 
 DBFILE = "/tmp/maputil.db"
 
+SCHEMA = """
+create table if not exists item(key text primary key, val text);
+create table if not exists run(name text primary key, size integer, created_at timestamp default current_timestamp);
+"""
+
 
 def conn():
-    return sqlite3.connect(DBFILE, check_same_thread=False)
+    create_tables = False
+    if not os.path.exists(DBFILE):
+        create_tables = True
+
+    db = sqlite3.connect(DBFILE, check_same_thread=False)
+    if create_tables:
+        db.executescript(SCHEMA)
+        db.commit()
+    return db
 
 
 def clear():
-    os.remove(DBFILE)
+    try:
+        os.remove(DBFILE)
+    except FileNotFoundError:
+        pass
 
 
-def prepdb(db):
-    assert isinstance(db, sqlite3.Connection)
-
-    db.execute("create table if not exists cache(key text primary key,val text)")
-    db.commit()
+def newid():
+    return uuid.uuid4().hex
 
 
-def additem(db, key, jsonval):
-    assert isinstance(db, sqlite3.Connection)
-    assert isinstance(key, str)
-
-    db.execute("insert into cache(key,val) values(?,?)", (key, jsonval))
-    db.commit()
-
-
-def getitem(db, key):
-    assert isinstance(db, sqlite3.Connection)
-    assert isinstance(key, str)
-
-    cur = db.execute("select val from cache where key=?", (key,))
-    ret = cur.fetchone()
-    if ret is None:
+def to_run(row):
+    if row is None:
         return None
-    return ret[0]
+    name, size = row
+    return {"name": name, "size": size}
 
 
-def select(fn, inputs, run, progress=False, concurrency=1):
+def new_run(db, resume, size):
+    assert isinstance(db, sqlite3.Connection)
+    assert isinstance(resume, bool) or isinstance(resume, str)
+    assert isinstance(size, int)
+
+    run = None
+    if resume is True:
+        # if resume is True, automatically use the last run.
+        print("resume last run")
+        cur = db.execute("select name,size from run order by created_at desc limit 1")
+        run = to_run(cur.fetchone())
+        if run is None:
+            # if there is no last run, create a new one.
+            resume = newid()
+    elif isinstance(resume, str):
+        # if resume is a string, use the run with that name. If it doesn't exist, create a new one.
+        print("resume run:", resume)
+        cur = db.execute("select name,size from run where name=?", (resume,))
+        run = to_run(cur.fetchone())
+    else:
+        # otherwise always create a new run.
+        resume = newid()
+
+    if run is None:
+        db.execute("insert into run(name,size) values(?,?)", (resume, size))
+        db.commit()
+        return resume
+    else:
+        # if run is not None, check that the size matches.
+        assert run["size"] == size
+        return run["name"]
+
+
+def set_item(db, key, jsonval):
+    assert isinstance(db, sqlite3.Connection)
+    assert isinstance(key, str)
+    assert isinstance(jsonval, str)
+
+    db.execute("insert into item(key,val) values(?,?)", (key, jsonval))
+    db.commit()
+
+
+def get_item(db, key):
+    assert isinstance(db, sqlite3.Connection)
+    assert isinstance(key, str)
+
+    cur = db.execute("select val from item where key=?", (key,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    (jsonval,) = row
+    return jsonval
+
+
+def select(fn, inputs, resume=False, progress=False, concurrency=1):
     """
     Apply a function to a collection of inputs with caching and optional concurrency.
 
@@ -55,8 +111,9 @@ def select(fn, inputs, run, progress=False, concurrency=1):
         The function to apply to each input element.
     inputs : list or pandas.Series
         The collection of input values to process.
-    run : str
-        A unique identifier for this run, used for caching results.
+    resume : bool or str, default=False
+        If True, resume the last run. If a string, resume the run with that name.
+        If False, create a new run with a random identifier.
     progress : bool, default=False
         Whether to display a progress bar during execution.
     concurrency : int, default=1
@@ -70,52 +127,67 @@ def select(fn, inputs, run, progress=False, concurrency=1):
 
     Notes:
     ------
-    Results are cached based on the run identifier and input position.
-    Subsequent calls with the same run identifier will use cached results.
+    Results are cached in a SQLite database based on the resume identifier and input position.
+    Subsequent calls with the same resume identifier will use cached results without recomputation.
+    The caching is persistent across program restarts, making it useful for long-running or failure-prone processes.
     """
     assert callable(fn)
     assert isinstance(inputs, list) or isinstance(inputs, pd.Series)
-    assert isinstance(run, str)
+    assert isinstance(resume, bool) or isinstance(resume, str)
     assert isinstance(progress, bool)
     assert isinstance(concurrency, int) and concurrency > 0
 
+    index = None
     if isinstance(inputs, pd.Series):
         index = inputs.index
         inputs = inputs.tolist()
-    else:
-        index = None
 
+    pbar = None
+    if progress:
+        pbar = tqdm(total=len(inputs))
+
+    dblock = threading.Lock()
     with conn() as db:
-        prepdb(db)
-        dblock = threading.Lock()
+        runid = new_run(db, resume, len(inputs))
 
         def memfn(item):
             idx, input = item
-            key = f"{run}:{idx}"
+            key = f"{runid}:{idx}"
+
             with dblock:
-                jsonval = getitem(db, key)
+                # try to get cached result
+                jsonval = get_item(db, key)
+
             if jsonval is None:
-                val = fn(input)
+                try:
+                    # if not cached, compute result
+                    val = fn(input)
+                except Exception as e:
+                    print("runid:", runid)
+                    raise e
+
                 with dblock:
+                    # save result to cache
                     jsonval = json.dumps(val)
-                    additem(db, key, jsonval)
+                    set_item(db, key, jsonval)
             else:
+                # if cached, load result
                 val = json.loads(jsonval)
+
+            if progress:
+                pbar.update(1)
             return val
 
         if concurrency == 1:
-            if progress:
-                inputs = tqdm(inputs)
-            outputs = []
-            for item in enumerate(inputs):
-                outputs.append(memfn(item))
+            outputs = [memfn(item) for item in enumerate(inputs)]
         else:
             with ThreadPoolExecutor(max_workers=concurrency) as executor:
-                outputs = executor.map(memfn, enumerate(inputs))
-                if progress:
-                    outputs = tqdm(outputs, total=len(inputs))
-                outputs = list(outputs)
+                outputs = list(executor.map(memfn, enumerate(inputs)))
 
+    if progress:
+        pbar.close()
+
+    # return either a list or Series which should match the input type
     if index is None:
         return outputs
     else:

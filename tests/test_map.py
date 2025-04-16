@@ -18,13 +18,14 @@ def slow(x):
 
 
 def test_init():
+    print("clearing db")
     clear()
 
 
 def test_list():
     inputs = [1, 2, 3, 4, 5]
     outputs = [2, 4, 6, 8, 10]
-    assert select(fast, inputs, run="t1") == outputs
+    assert select(fast, inputs) == outputs
 
 
 def test_series():
@@ -32,14 +33,14 @@ def test_series():
     inputs = pd.Series([1, 2, 3, 4, 5], index=index)
     outputs = pd.Series([2, 4, 6, 8, 10], index=index)
 
-    results = select(fast, inputs, run="t2")
+    results = select(fast, inputs)
     assert results.equals(outputs)
 
 
 def test_list_concurrency():
     inputs = [1, 2, 3, 4, 5]
     outputs = [2, 4, 6, 8, 10]
-    assert select(slow, inputs, concurrency=3, run="t3") == outputs
+    assert select(slow, inputs, concurrency=3) == outputs
 
 
 def test_series_concurrency():
@@ -47,14 +48,14 @@ def test_series_concurrency():
     inputs = pd.Series([1, 2, 3, 4, 5], index=index)
     outputs = pd.Series([2, 4, 6, 8, 10], index=index)
 
-    results = select(slow, inputs, concurrency=3, run="t4")
+    results = select(slow, inputs, concurrency=3)
     assert results.equals(outputs)
 
 
 def test_null_value():
     inputs = [1, 2, None]
     outputs = [2, 4, None]
-    assert select(fast, inputs, run="t5") == outputs
+    assert select(fast, inputs) == outputs
 
 
 def test_cache():
@@ -69,11 +70,11 @@ def test_cache():
     run1 = uuid.uuid4().hex
     run2 = uuid.uuid4().hex
 
-    select(f, inputs, run=run1)
+    select(f, inputs, resume=run1)
     assert called == 5
 
-    select(f, inputs, run=run1)
+    select(f, inputs, resume=run1)
     assert called == 5
 
-    select(f, inputs, run=run2)
+    select(f, inputs, resume=run2)
     assert called == 10
