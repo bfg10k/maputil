@@ -1,6 +1,6 @@
 [project]
 name = "bfg-maputil"
-version = "0.2.4"
+version = "0.2.5"
 description = "A map utility function that caches results in case of failures and reruns, processes pandas Series, and supports parallelization"
 readme = "README.md"
 authors = [
