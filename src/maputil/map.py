@@ -12,7 +12,13 @@ from .progress import tqdm
 from .run_util import get_runid
 
 
-def select(fn, inputs, resume=False, progress=False, concurrency=1):
+def select(
+    fn: Callable,
+    inputs: list | pd.Series,
+    resume: bool | str = False,
+    progress: bool = False,
+    concurrency: int = 1,
+):
     """
     Apply a function to a collection of inputs with caching and optional concurrency.
 
@@ -50,13 +56,13 @@ def select(fn, inputs, resume=False, progress=False, concurrency=1):
 
     if isinstance(inputs, pd.Series):
         # process the Series in the positional order and return a Series with the same index
-        outputs = _select_list(fn, inputs.tolist(), resume, progress, concurrency)
+        outputs = maplist(fn, inputs.tolist(), resume, progress, concurrency)
         return pd.Series(outputs, index=inputs.index)
     else:
-        return _select_list(fn, inputs, resume, progress, concurrency)
+        return maplist(fn, inputs, resume, progress, concurrency)
 
 
-def _select_list(fn, inputs, resume, progress, concurrency):
+def maplist(fn, inputs, resume, progress, concurrency):
     dblock = threading.Lock()
     size = len(inputs)
 
