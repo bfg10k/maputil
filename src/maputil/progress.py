@@ -1,6 +1,6 @@
 in_notebook = False
 try:
-    from IPython import get_ipython
+    from IPython import get_ipython  # type: ignore
 
     if get_ipython() is not None and "IPKernelApp" in get_ipython().config:
         in_notebook = True

@@ -34,6 +34,7 @@ def test_series():
     outputs = pd.Series([2, 4, 6, 8, 10], index=index)
 
     results = select(fast, inputs)
+    assert isinstance(results, pd.Series)
     assert results.equals(outputs)
 
 
@@ -49,6 +50,7 @@ def test_series_concurrency():
     outputs = pd.Series([2, 4, 6, 8, 10], index=index)
 
     results = select(slow, inputs, concurrency=3)
+    assert isinstance(results, pd.Series)
     assert results.equals(outputs)
 
 

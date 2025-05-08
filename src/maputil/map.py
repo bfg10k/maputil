@@ -1,9 +1,7 @@
 import json
-import os
-import sqlite3
 import threading
-import uuid
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable
 
 import pandas as pd
 
@@ -18,7 +16,7 @@ def select(
     resume: bool | str = False,
     progress: bool = False,
     concurrency: int = 1,
-):
+) -> list | pd.Series:
     """
     Apply a function to a collection of inputs with caching and optional concurrency.
 
@@ -65,15 +63,16 @@ def select(
 def maplist(fn, inputs, resume, progress, concurrency):
     dblock = threading.Lock()
     size = len(inputs)
+    if progress:
+        pbar = tqdm(total=size)
+    else:
+        pbar = None
 
     with conn() as db:
         runid = get_runid(db, resume, size)
 
         if resume != runid:
             print("runid:", runid, flush=True)
-
-        if progress:
-            pbar = tqdm(total=size)
 
         def memfn(i):
             key = f"{runid}:{i}"
@@ -98,7 +97,7 @@ def maplist(fn, inputs, resume, progress, concurrency):
                 # if cached, load result
                 val = json.loads(jsonval)
 
-            if progress:
+            if pbar:
                 pbar.update(1)
             return val
 
@@ -109,6 +108,6 @@ def maplist(fn, inputs, resume, progress, concurrency):
                 outputs = executor.map(memfn, range(size))
         outputs = list(outputs)
 
-    if progress:
+    if pbar:
         pbar.close()
     return outputs
