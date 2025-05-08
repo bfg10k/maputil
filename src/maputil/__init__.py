@@ -1,3 +1,4 @@
-from .map import clear, select
+from .db_util import clear
+from .map import select
 
-__all__ = ["clear", "select"]
+__all__ = ["select"]
