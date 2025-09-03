@@ -38,6 +38,18 @@ def test_series():
     assert results.equals(outputs)
 
 
+def test_dataframe():
+    index = ["a", "b", "c", "d", "e"]
+    data = {"col1": [1, 2, 3, 4, 5], "col2": [10, 20, 30, 40, 50]}
+    inputs = pd.DataFrame(data, index=index)
+
+    outputs = pd.Series([2, 4, 6, 8, 10], index=index)
+
+    results = select(lambda x: x["col1"] * 2, inputs)
+    assert isinstance(results, pd.Series)
+    assert results.equals(outputs)
+
+
 def test_list_concurrency():
     inputs = [1, 2, 3, 4, 5]
     outputs = [2, 4, 6, 8, 10]

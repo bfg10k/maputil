@@ -12,7 +12,7 @@ from .run_util import get_runid
 
 def select(
     fn: Callable,
-    inputs: list | pd.Series,
+    inputs: list | pd.Series | pd.DataFrame,
     resume: bool | str = False,
     progress: bool = False,
     concurrency: int = 1,
@@ -24,7 +24,7 @@ def select(
     -----------
     fn : callable
         The function to apply to each input element.
-    inputs : list or pandas.Series
+    inputs : list or pandas.Series or pandas.DataFrame
         The collection of input values to process.
     resume : bool or str, default=False
         If True, resume the last run. If a string, resume the run with that name.
@@ -38,7 +38,7 @@ def select(
     --------
     list or pandas.Series
         If inputs was a list, returns a list of results.
-        If inputs was a pandas.Series, returns a pandas.Series with the same index.
+        If inputs was a pandas.Series or pandas.DataFrame, returns a pandas.Series with the same index.
 
     Notes:
     ------
@@ -47,14 +47,20 @@ def select(
     The caching is persistent across program restarts, making it useful for long-running or failure-prone processes.
     """
     assert callable(fn)
-    assert isinstance(inputs, list) or isinstance(inputs, pd.Series)
-    assert isinstance(resume, bool) or isinstance(resume, str)
+    assert isinstance(inputs, (list, pd.Series, pd.DataFrame))
+    assert isinstance(resume, (bool, str))
     assert isinstance(progress, bool)
     assert isinstance(concurrency, int) and concurrency > 0
 
     if isinstance(inputs, pd.Series):
-        # process the Series in the positional order and return a Series with the same index
+        # process each item of the Series and return a Series with the same index
         outputs = maplist(fn, inputs.tolist(), resume, progress, concurrency)
+        return pd.Series(outputs, index=inputs.index)
+    elif isinstance(inputs, pd.DataFrame):
+        # process each row of the DataFrame and return a Series with the same index
+        outputs = maplist(
+            fn, inputs.to_dict(orient="records"), resume, progress, concurrency
+        )
         return pd.Series(outputs, index=inputs.index)
     else:
         return maplist(fn, inputs, resume, progress, concurrency)
