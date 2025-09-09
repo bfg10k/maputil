@@ -1,7 +1,7 @@
 [project]
 name = "bfg-maputil"
-version = "0.4.1"
-description = "Concurrent map utility for lists, pandas Series/DataFrames with index preservation, progress, and error inspection"
+version = "0.5.0"
+description = "Threaded map for lists, pandas Series/DataFrames with index and progress"
 readme = "README.md"
 authors = [
     { name = "leizha", email = "8961794+leizha@users.noreply.github.com" }
