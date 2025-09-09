@@ -1,34 +1,48 @@
 # maputil
 
-A powerful map function that improves on Python's built-in map function by adding caching and support for both lists and pandas Series.
+A concurrent map utility for lists, pandas Series, and DataFrames. Preserves indexes and shows a progress bar. Returns a `Run` handle for partial results and error inspection.
 
 ## Features
 
-- Caches results in a SQLite database to avoid recomputing values if the code fails or reruns
-- Works with both Python lists and pandas Series
-- Preserves Series indexes in the output, making it easy to add results as a new column in a DataFrame
-- Supports concurrent execution with multiple threads
-- Optional progress bar
+- Concurrent execution with threads (`concurrency`)
+- Works with lists, Series, and DataFrames
+- Preserves input indexes in the output (`pd.Series`)
+- Progress bar (terminal and Jupyter)
+- Stops scheduling on first error; inspect via `Run.get_err()`
 
 ## Example
 
 ```python
-from maputil import map
-
-# With a pandas Series
-inputs = pd.Series([1, 2, 3, 4, 5], index=["a", "b", "c", "d", "e"])
+from maputil import map2
 
 def f(x):
-    return x * 2
+    return x + 1
 
-outputs = map(f, inputs, run="demo")
+r = map2(f, [10, 20, 30], concurrency=4)
+r.join()
+print(r.get_results())  # [11, 21, 31]
+```
+
+With a pandas DataFrame:
+
+```python
+import pandas as pd
+from maputil import map2
+
+df = pd.DataFrame({"x": [1, 2, 3], "y": [10, 20, 30]}, index=[10, 20, 30])
+
+def f(row):
+    return row["x"] + row["y"]
+
+r = map2(f, df, concurrency=3)
+r.join()
+out = r.get_results()  # pd.Series(index=[10, 20, 30], values=[11, 22, 33])
 ```
 
 ## Usage
 
-The `map()` function requires a `run` parameter to identify cached results. For the same run name, the function will use cached results for inputs it has seen before.
-
-### Optional parameters:
-
-- `concurrency`: Number of threads to use for parallel execution
-- `progress`: Set to `True` to display a progress bar
+- `map2(fn, inputs, concurrency=1) -> Run`
+- `Run.start()` is idempotent; `map2` starts automatically
+- `Run.join()` waits for completion
+- `Run.get_results(partial=True)` returns a list or `pd.Series`
+- `Run.get_err()` returns a traceback string or `None`

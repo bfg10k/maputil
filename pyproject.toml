@@ -1,7 +1,7 @@
 [project]
 name = "bfg-maputil"
 version = "0.3.0"
-description = "A map utility function that caches results in case of failures and reruns, processes pandas Series, and supports parallelization"
+description = "Concurrent map utility for lists, pandas Series/DataFrames with index preservation, progress, and error inspection"
 readme = "README.md"
 authors = [
     { name = "leizha", email = "8961794+leizha@users.noreply.github.com" }
