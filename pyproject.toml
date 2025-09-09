@@ -1,6 +1,6 @@
 [project]
 name = "bfg-maputil"
-version = "0.3.0"
+version = "0.4.0"
 description = "Concurrent map utility for lists, pandas Series/DataFrames with index preservation, progress, and error inspection"
 readme = "README.md"
 authors = [
