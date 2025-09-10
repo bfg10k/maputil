@@ -1,6 +1,7 @@
 import sys
 import traceback
-from threading import Lock, Thread
+from queue import Empty, Queue, ShutDown
+from threading import Thread
 from typing import Callable
 
 import pandas as pd
@@ -28,69 +29,62 @@ class Run:
             self.index = None
         else:
             raise TypeError("inputs must be a list, Series, or DataFrame")
+        self.total = len(self.inputs)
 
         if not isinstance(concurrency, int) or concurrency <= 0:
             raise ValueError("concurrency must be a positive integer")
         self.concurrency = concurrency
 
-        self.lock = Lock()
-        self.total = len(self.inputs)
-        self.results = [None] * self.total
-        self.err = None
-        self.pending = list(range(self.total - 1, -1, -1))
-        self.workers = []
-        self.pb = None
-        self.done = False
+        self.q_input = Queue()
+        self.q_output = Queue()
 
     def worker(self):
         while True:
-            with self.lock:
-                if self.done or not self.pending:
-                    break
-                idx = self.pending.pop()
             try:
-                result = self.fn(self.inputs[idx])
-                with self.lock:
-                    self.results[idx] = result
-                    self.pb.update()
+                idx, item = self.q_input.get_nowait()
+            except (Empty, ShutDown):
+                break
+
+            try:
+                result = self.fn(item)
+                self.q_output.put((idx, result, None))
             except Exception:
-                with self.lock:
-                    if not self.err:
-                        self.err = traceback.format_exc()
-                    self.done = True
-                    break
+                err = traceback.format_exc()
+                self.q_output.put((idx, None, err))
+                self.q_input.shutdown(immediate=True)
 
     def start(self):
-        self.pb = tqdm(total=self.total)
+        # enqueue all inputs
+        for idx, input in enumerate(self.inputs):
+            self.q_input.put((idx, input))
+
+        # We manage threads manually instead of using ThreadPoolExecutor.
+        # map() is often used in Jupyter notebooks. When users interrupt
+        # the kernel, it sends exceptions to the main thread but doesn't
+        # stop worker threads. Uncaught exceptions in the main thread
+        # also don't stop worker threads.
+
+        # start workers
+        nworkers = min(self.concurrency, self.total)
+        for _ in range(nworkers):
+            Thread(target=self.worker).start()
+
+        # collect results
+        results = [None] * self.total
         try:
-            # We manage threads manually instead of using ThreadPoolExecutor.
-            # map() is often used in Jupyter notebooks. When users interrupt
-            # the kernel, it sends exceptions to the main thread but doesn't
-            # stop worker threads. Uncaught exceptions in the main thread
-            # also don't stop worker threads.
-            nworkers = min(self.concurrency, self.total)
-            for _ in range(nworkers):
-                w = Thread(target=self.worker)
-                self.workers.append(w)
-                w.start()
+            for _ in tqdm(range(self.total), mininterval=0, maxinterval=0.1):
+                idx, result, err = self.q_output.get()
+                if err:
+                    raise RuntimeError(err)
+                results[idx] = result
 
-            for w in self.workers:
-                w.join()
-
-            return self.collect()
+            if self.index is not None:
+                return pd.Series(results, index=self.index)
+            return results
         finally:
-            # ask the workers to exit on any error
-            with self.lock:
-                self.done = True
-            self.pb.close()
-
-    def collect(self):
-        if self.err:
-            raise RuntimeError(self.err)
-
-        if self.index is not None:
-            return pd.Series(self.results, index=self.index)
-        return self.results
+            # if user interrupts the kernel, we need to shutdown the input queue
+            # to stop the workers
+            self.q_input.shutdown(immediate=True)
 
 
 def map2(

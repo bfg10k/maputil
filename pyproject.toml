@@ -1,6 +1,6 @@
 [project]
 name = "bfg-maputil"
-version = "0.5.1"
+version = "0.5.2"
 description = "Threaded map for lists, pandas Series/DataFrames with index and progress"
 readme = "README.md"
 authors = [
