@@ -41,22 +41,23 @@ class Run:
     def worker(self):
         while True:
             try:
-                idx, item = self.q_input.get_nowait()
+                idx = self.q_input.get_nowait()
             except (Empty, ShutDown):
                 break
 
             try:
-                result = self.fn(item)
+                input_ = self.inputs[idx]
+                result = self.fn(input_)
                 self.q_output.put((idx, result, None))
             except Exception:
                 err = traceback.format_exc()
                 self.q_output.put((idx, None, err))
-                self.q_input.shutdown(immediate=True)
+                break
 
     def start(self):
         # enqueue all inputs
-        for idx, input in enumerate(self.inputs):
-            self.q_input.put((idx, input))
+        for idx in range(self.total):
+            self.q_input.put(idx)
 
         # We manage threads manually instead of using ThreadPoolExecutor.
         # map() is often used in Jupyter notebooks. When users interrupt
@@ -74,17 +75,16 @@ class Run:
         try:
             for _ in tqdm(range(self.total), mininterval=0, maxinterval=0.1):
                 idx, result, err = self.q_output.get()
-                if err:
+                if err is not None:
                     raise RuntimeError(err)
                 results[idx] = result
-
-            if self.index is not None:
-                return pd.Series(results, index=self.index)
-            return results
         finally:
-            # if user interrupts the kernel, we need to shutdown the input queue
-            # to stop the workers
-            self.q_input.shutdown(immediate=True)
+            # when user presses ctrl+c or user interrupts the kernel, queue.get() raises InterruptedError
+            self.q_input.shutdown(immediate=True)  # signal workers to stop
+
+        if self.index is not None:
+            return pd.Series(results, index=self.index)
+        return results
 
 
 def map2(
