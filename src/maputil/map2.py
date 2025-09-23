@@ -24,11 +24,14 @@ class Run:
         elif isinstance(inputs, pd.DataFrame):
             self.index = inputs.index
             self.inputs = inputs.to_dict(orient="records")
+        elif isinstance(inputs, pd.Index):
+            self.index = inputs
+            self.inputs = range(len(inputs))
         elif isinstance(inputs, list):
-            self.inputs = inputs
             self.index = None
+            self.inputs = inputs
         else:
-            raise TypeError("inputs must be a list, Series, or DataFrame")
+            raise TypeError("inputs must be a list, Series, DataFrame, or Index")
         self.total = len(self.inputs)
 
         if not isinstance(concurrency, int) or concurrency <= 0:
@@ -88,13 +91,16 @@ class Run:
 
 
 def map2(
-    fn: Callable, inputs: list | pd.Series | pd.DataFrame, *, concurrency: int = 1
+    fn: Callable,
+    inputs: list | pd.Series | pd.DataFrame | pd.Index,
+    *,
+    concurrency: int = 1,
 ) -> list | pd.Series:
     """
     Apply fn to each item in inputs using threads and a progress bar.
 
-    inputs may be a list, pandas Series, or DataFrame (rows as dicts).
-    Preserves index for Series/DataFrame. Returns a list, or a Series if
+    inputs may be a list, pandas Series, DataFrame, or Index.
+    Preserves index for Series/DataFrame/Index. Returns a list, or a Series if
     inputs had an index. concurrency controls number of worker threads.
     """
 
